@@ -1,0 +1,9 @@
+build.bat
+*.exe
+*.bin
+*.d
+*.nds
+*.elf
+*.srl
+*.map
+*.o
