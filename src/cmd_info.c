@@ -1,6 +1,13 @@
 #include "cmd_common.h"
 #include "firmware.h"
 
+typedef enum SerialType_ {
+	SERIAL_TYPE_RETAIL,
+	SERIAL_TYPE_IS_NITRO_CAPTURE,
+	SERIAL_TYPE_IS_NITRO_EMULATOR,
+	SERIAL_TYPE_UNKNOWN
+} SerialType;
+
 void CmdHelpInfo(void) {
 	puts("");
 	puts("Usage: info");
@@ -40,6 +47,66 @@ static const char *GetIpl2TypeString(int type) {
 	static char buffer[64];
 	sprintf(buffer, "%s (%s)", typestr, region);
 	return buffer;
+}
+
+static SerialType DecodeSerial(const uint8_t *raw, uint64_t *pSerial) {
+	//IS-NITRO-EMULATOR and IS-NITRO-CAPTURE devices arrange the serial number in
+	//opposite endiannesses. We need to detect the endianness.
+	uint64_t be = 0, le = 0;
+	for (int i = 0; i < 5; i++) {
+		le |= ((uint64_t) raw[i]) << (     i * 8);
+		be |= ((uint64_t) raw[i]) << (32 - i * 8);
+	}
+
+	//low 36 bits are the decimal date
+	uint64_t leDate = le & 0x0FFFFFFFFFull;
+	uint64_t beDate = be & 0x0FFFFFFFFFull;
+	uint64_t serial64 = 0xFFFFFFFFFFull;
+
+	if (beDate <= 99999999ull) serial64 = be;
+	if (leDate <= 99999999ull) serial64 = le;
+	if (serial64 == 0xFFFFFFFFFFull) {
+		*pSerial = 0;
+		return SERIAL_TYPE_RETAIL;
+	}
+	
+	SerialType type = SERIAL_TYPE_RETAIL;
+	int typeCode = (serial64 >> 36) & 0xF;
+	switch (typeCode) {
+		case 0xF:
+			type = SERIAL_TYPE_IS_NITRO_EMULATOR;
+			break;
+		case 0xE:
+			type = SERIAL_TYPE_IS_NITRO_CAPTURE;
+			break;
+		default:
+			type = SERIAL_TYPE_UNKNOWN;
+			break;
+	}
+
+	//decoded
+	*pSerial = serial64 & 0x0FFFFFFFFFull;
+	return type;
+}
+
+static void PrintSerial(const uint8_t *pRawSerial) {
+	//serial info
+	uint64_t serialNo;
+	SerialType serialType = DecodeSerial(pRawSerial, &serialNo);
+
+	if (serialType == SERIAL_TYPE_RETAIL) {
+		//retail devices have no serial number
+		printf("Retail (no serial)\n");
+		return;
+	}
+
+	switch (serialType) {
+		case SERIAL_TYPE_IS_NITRO_EMULATOR: printf("IS-NITRO-EMULATOR "); break;
+		case SERIAL_TYPE_IS_NITRO_CAPTURE:  printf("IS-NITRO-CAPTURE "); break;
+		default:                            printf("Unknown Device "); break;
+	}
+	
+	printf("%08d\n", (int) serialNo);
 }
 
 void CmdProcInfo(int argc, const char **argv) {
@@ -97,7 +164,7 @@ void CmdProcInfo(int argc, const char **argv) {
 	printf("Wireless Info:\n");
 	printf("  RF Type               : %s\n", GetRfType(wl->rfType));
 	printf("  Module Vendor         : %02X %02X\n", wl->module, wl->vendor);
-	printf("  Serial                : %02X%02X%02X%02X%02X\n", wl->serial[0], wl->serial[1], wl->serial[2], wl->serial[3], wl->serial[4]);
+	printf("  Serial                : "); PrintSerial(wl->serial);
 	printf("  MAC Address           : %02X-%02X-%02X-%02X-%02X-%02X\n", wl->macAddr[0], wl->macAddr[1], wl->macAddr[2], wl->macAddr[3], wl->macAddr[4], wl->macAddr[5]);
 	printf("  Allowed Channels      : "); for (int i = 0; i < 16; i++) if (channels & (1 << i)) printf("%d ", i); printf("\n");
 	printf("\n");
