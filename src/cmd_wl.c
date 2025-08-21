@@ -2,6 +2,7 @@
 #include "firmware.h"
 
 #include <string.h>
+#include <time.h>
 
 static const char *const sMacInitRegisterNames[] = {
 	"TXPE_OFF_DELAY",
@@ -380,6 +381,7 @@ void CmdHelpWl(void) {
 	puts("  info    Display the wireless initialization info.");
 	puts("  mrf     Read or modify RF registers.");
 	puts("  mbr     Read or modify BB registers.");
+	puts("  setmac  Generate a MAC address.");
 }
 
 
@@ -812,6 +814,232 @@ static void CmdWlMrf(FlashHeader *hdr, FlashRfBbInfo *wl, int argc, const char *
 	}
 }
 
+
+static void CmdHelpWlSetMac(void) {
+	puts("");
+	puts("Usage: wl setmac <method>");
+	puts("");
+	puts("Generates a MAC address using the specified method. This may be one of:");
+	puts("  random                 - Generate a random MAC address based on the IPL2 type");
+	puts("  manual <address>       - Set the MAC address manually");
+	puts("  dwcid  <id>            - Generate a MAC address based on a DWC user ID");
+}
+
+static void GenOUI(unsigned char *pMac, int gen) {
+	//original module and X2B uses this OUI. This OUI is checked by DWC.
+	unsigned char ouiOriginal[3] = { 0x00, 0x09, 0xBF };
+	
+	//middle range modules used this OUI
+	unsigned char ouiSecond[3] = { 0x00, 0x16, 0x56 };
+	
+	//these seen later on later modules. This list may not be comprehensive.
+	unsigned char ouiLate[][3] = {
+		{ 0x00, 0x16, 0x56 },
+		{ 0x00, 0x17, 0xAB },
+		{ 0x00, 0x19, 0xFD },
+		{ 0x00, 0x1A, 0xE9 },
+		{ 0x00, 0x1B, 0x7A },
+		{ 0x00, 0x1B, 0xEA },
+		{ 0x00, 0x1D, 0xBC },
+		{ 0x00, 0x1E, 0xA9 },
+		{ 0x00, 0x21, 0x47 },
+		{ 0x00, 0x22, 0x4C },
+		{ 0x00, 0x22, 0xAA },
+		{ 0x00, 0x22, 0xD7 },
+		{ 0x00, 0x23, 0xCC },
+		{ 0x00, 0x24, 0x1E },
+		{ 0x00, 0x24, 0xF3 },
+		{ 0x00, 0x25, 0xA0 },
+		{ 0x00, 0x26, 0x59 },
+		{ 0x00, 0x27, 0x09 },
+		{ 0xE0, 0xE7, 0x51 },
+		{ 0xE8, 0x4E, 0xCE }
+	};
+	
+	//based on the generation selected, pick an OUI.
+	switch (gen) {
+		case 0: // original
+		default:
+			memcpy(pMac, ouiOriginal, sizeof(ouiOriginal));
+			break;
+		case 1: // second
+			memcpy(pMac, ouiSecond, sizeof(ouiSecond));
+			break;
+		case 2: // late (random; must NOT return original OUI)
+			memcpy(pMac, ouiLate[rand() % (int) (sizeof(ouiLate) / sizeof(ouiLate[0]))], 3);
+			break;
+	}
+}
+
+static void CmdWlSetMac(FlashHeader *hdr, FlashRfBbInfo *wl, int argc, const char **argv) {
+	if (argc < 2) {
+		CmdHelpWlSetMac();
+		return;
+	}
+	
+	const char *mode = argv[1];
+	
+	if (stricmp(mode, "random") == 0) {
+		//random
+		srand(time(0));
+		
+		//generate 24-bit random number
+		uint32_t rnd = 0;
+		rnd ^= rand() <<  0;
+		rnd ^= rand() << 15;
+		rnd &= 0xFFFFFF;
+		
+		unsigned char addr[6] = { 0 };
+		
+		int ipl2Type = hdr->ipl2Type;
+		if (ipl2Type == 0xFF) ipl2Type = 0x00;
+		
+		int gen = 0;
+		if (!(ipl2Type & IPL2_TYPE_USG)) {
+			//original OUI (even on later IS-NITRO)
+			gen = 0;
+		} else if (wl->module == 5) {
+			//middle range OUI
+			gen = 1;
+		} else {
+			//late range OUI
+			gen = 2;
+		}
+		GenOUI(addr, gen);
+		
+		//put random digits
+		addr[3] = (rnd >>  0) & 0xFF;
+		addr[4] = (rnd >>  8) & 0xFF;
+		addr[5] = (rnd >> 16) & 0xFF;
+		memcpy(wl->macAddr, addr, sizeof(addr));
+		WlCalcSum(wl);
+	} else if (stricmp(mode, "manual") == 0) {
+		//manual
+		if (argc < 3) {
+			CmdHelpWlSetMac();
+			return;
+		}
+		
+		const char *macarg = argv[2];
+		
+		//take MAC
+		unsigned char addr[6] = { 0 };
+		
+		char c;
+		int pos = 0;
+		while ((c = *(macarg++)) != '\0') {
+			//skip spacing characters
+			if (c == '-' || c == ':' || c == ' ' || c == '.') continue;
+		
+			int digit = -1;
+			if (c >= '0' && c <= '9') digit = (c - '0') + 0x0;
+			if (c >= 'a' && c <= 'f') digit = (c - 'a') + 0xA;
+			if (c >= 'A' && c <= 'F') digit = (c - 'A') + 0xA;
+			
+			if (digit == -1) {
+				printf("Incorrect MAC address format. Expects:\n");
+				puts("  AA-BB-CC-DD-EE-FF");
+				puts("  AA:BB:CC:DD:EE:FF");
+				puts("  AA BB CC DD EE FF");
+				puts("  AA.BB.CC.DD.EE.FF");
+				puts("  AABB.CCDD.EEFF");
+				puts("  AABBCCDDEEFF");
+				return;
+			}
+			
+			addr[pos / 2] |= digit << (4 - 4 * (pos & 1));
+			
+			pos++;
+			if (pos >= 12) break;
+		}
+		
+		//check a few MAC addresses as special case.
+		unsigned char broadcast  [] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+		unsigned char mp         [] = { 0x03, 0x09, 0xBF, 0x00, 0x00, 0x00 };
+		unsigned char mpAck      [] = { 0x03, 0x09, 0xBF, 0x00, 0x00, 0x03 };
+		unsigned char mpKey      [] = { 0x03, 0x09, 0xBF, 0x00, 0x00, 0x10 };
+		
+		
+		if ((addr[0] & 1) && (addr[0] != 0xFF || addr[1] != 0xFF || addr[2] != 0xFF)) printf("WARNING: entered MAC address is a multi-cast address.\n");
+		if (memcmp(addr, broadcast  , sizeof(addr)) == 0) printf("WARNING: entered MAC address is the broadcast address.\n");
+		if (memcmp(addr, mp         , sizeof(addr)) == 0) printf("WARNING: entered MAC address is the MP address.\n");
+		if (memcmp(addr, mpAck      , sizeof(addr)) == 0) printf("WARNING: entered MAC address is the MP ACK address.\n");
+		if (memcmp(addr, mpKey      , sizeof(addr)) == 0) printf("WARNING: entered MAC address is the MP key address.\n");
+		
+		memcpy(wl->macAddr, addr, sizeof(addr));
+	} else if (stricmp(mode, "dwcid") == 0) {
+		//DWC ID
+		if (argc < 3) {
+			CmdHelpWlSetMac();
+			return;
+		}
+		
+		//DWC ID (parse as decimal by default)
+		uint64_t id = ParseArgNumberULLEx(argv[2], 10);
+		
+		//DWC ID is reported by the user interface scaled by 1000. We'll unscale it if that was what the user input.
+		if (((id % 1000ull) == 0) && (id > 0x7FFFFFFFFFFull)) {
+			id /= 1000ull;
+		}
+		
+		//apply key
+		id &= 0x000007FFFFFFFFFFull;
+		id ^= 0x0000676767676767ull;
+		id &= 0x000007FFFFFFFFFFull;
+		id |= (id & 1) << 43;
+		id >>= 1;
+		
+		//shuffle byte order
+		uint64_t unshuffled = 0;
+		unshuffled |= ((id >>  8) & 0xFFu) <<  0;
+		unshuffled |= ((id >> 16) & 0xFFu) <<  8;
+		unshuffled |= ((id >>  0) & 0xFFu) << 16;
+		unshuffled |= ((id >> 32) & 0xFFu) << 24;
+		unshuffled |= ((id >> 24) & 0xFFu) << 32;
+		unshuffled |= ((id >> 40) & 0xFFu) << 40; // these bits not permuted
+		
+		//decipher the low 40bit
+		static const unsigned char cipherInv[] = { 0x7, 0x2, 0x5, 0xA, 0xB, 0x0, 0xD, 0xF, 0xC, 0x1, 0x6, 0x8, 0x4, 0x9, 0x3, 0xE };
+		id = 0;
+		for (int i = 0; i < 10; i++) {
+			id |= ((uint64_t) cipherInv[(unshuffled >> (4 * i)) & 0xF]) << (4 * i);
+		}
+		id |= unshuffled & 0x0000070000000000ull; // these bits not ciphered
+		
+		//apply key
+		id ^= 0x0000D6D6D6D6D6D6ull;
+		id &= 0x000007FFFFFFFFFFull;
+		
+		//extract fields
+		int vendor = (id >> 2) & 1;
+		int unit = (id >> 0) & 3;
+		uint32_t macLo24 = (id >> 3) & 0xFFFFFF;
+		
+		if (unit) {
+			printf("WARNING: Given DWC ID is not for NITRO.\n");
+		}
+		
+		//get OUI.
+		unsigned char addr[6];
+		GenOUI(addr, vendor ? 2 : 0); // Vendor=0: original, Vendor=1: other
+		
+		//copy low bits of MAC
+		addr[3] = (macLo24 >> 16) & 0xFF;
+		addr[4] = (macLo24 >>  8) & 0xFF;
+		addr[5] = (macLo24 >>  0) & 0xFF;
+		memcpy(wl->macAddr, addr, sizeof(addr));
+		WlCalcSum(wl);
+		
+	} else {
+		printf("Unrecognized mode '%s'.\n", mode);
+		return;
+	}
+	
+	//echo MAC
+	printf("MAC Address: %02X-%02X-%02X-%02X-%02X-%02X", wl->macAddr[0], wl->macAddr[1], wl->macAddr[2], wl->macAddr[3], wl->macAddr[4], wl->macAddr[5]);
+	puts("");
+}
+
 void CmdProcWl(int argc, const char **argv) {
 	if (!RequireFirmwareImage()) return;
 
@@ -842,6 +1070,8 @@ void CmdProcWl(int argc, const char **argv) {
 		CmdWlMrf(hdr, wl, argc - 1, argv + 1);
 	} else if (stricmp(cmd, "mbr") == 0 || stricmp(cmd, "dbr") == 0) {
 		CmdWlMbr(hdr, wl, argc - 1, argv + 1);
+	} else if (stricmp(cmd, "setmac") == 0) {
+		CmdWlSetMac(hdr, wl, argc - 1, argv + 1);
 	} else {
 		printf("wl: Unrecognized command '%s'.\n", cmd);
 	}

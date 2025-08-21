@@ -74,12 +74,12 @@ void DoExit(void) {
 	gQuit = 1;
 }
 
-uint32_t ParseArgNumber(const char *arg) {
+uint64_t ParseArgNumberULLEx(const char *arg, unsigned int defRadix) {
 	if (*arg == '\0') return 0;
 	
 	//parse number. Assume hexadecimal by default.
-	int radix = 16;
-	uint32_t val = 0;
+	int radix = defRadix;
+	uint64_t val = 0;
 	
 	if (gFirmware != NULL && gFirmwareSize >= 0x200 && arg[0] == '$') {
 		//pseudo-variable expansion
@@ -146,4 +146,12 @@ uint32_t ParseArgNumber(const char *arg) {
 	}
 	
 	return val;
+}
+
+uint64_t ParseArgNumberULL(const char *arg) {
+	return ParseArgNumberULLEx(arg, 16);
+}
+
+uint32_t ParseArgNumber(const char *arg) {
+	return (uint32_t) ParseArgNumberULL(arg);
 }

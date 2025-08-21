@@ -38,6 +38,8 @@ void DoExit(void);
 // Parse a number from an argument list.
 //
 uint32_t ParseArgNumber(const char *arg);
+uint64_t ParseArgNumberULL(const char *arg);
+uint64_t ParseArgNumberULLEx(const char *arg, unsigned int defRadix);
 
 
 // ----- command procs
