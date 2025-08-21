@@ -55,7 +55,8 @@ typedef struct FlashRfBbInfo_ {
 	uint16_t tableSize;                     // +0x02C Size of table
 	uint8_t vendor;                         // +0x02E Vendor ID
 	uint8_t module;                         // +0x02F Module ID
-	uint8_t serial[6];                      // +0x030 Serial Number
+	uint8_t serial[5];                      // +0x030 Serial Number
+	uint8_t rsv35;                          // +0x035
 	uint8_t macAddr[6];                     // +0x036 MAC Address
 	uint16_t allowedChannel;                // +0x03C Allowed channels
 	uint16_t macFlags;                      // +0x03E MAC operation flags
@@ -67,6 +68,21 @@ typedef struct FlashRfBbInfo_ {
 	uint8_t bbInitRegs[0x69];               // +0x064 BBP init regs
 	uint8_t pad_;
 } FlashRfBbInfo;
+
+typedef struct FlashRf2958Info_ {
+	uint8_t initRegs[12][3];                // +0x0CE RF2958 init regs
+	uint8_t channelRegs[14][2][3];          // +0x0F2 RFU channel control
+	uint8_t bbpChannelAgc[14];              // +0x146 BBP AGC settings for channels
+	uint8_t rfuChannelTxPower[14];          // +0x154 RFU TXVGC setting (when TXVGC is internal)
+	uint8_t rssi;                           // +0x162 RSSI (20...36)
+} FlashRf2958Info;
+
+typedef struct FlashRfMm3156Info_ {
+	uint8_t initRegs[0x29];                 // +0x0CE MM3156 init regs
+	uint8_t bbpCount;                       //
+	uint8_t bbpChannelRegs[2][15];          // 
+	uint8_t rfuChannelRegs[2][15];          // 
+} FlashRfMm3156Info;
 
 typedef struct FlashDate_ {
 	uint8_t month;
@@ -191,6 +207,11 @@ void UpdateFirmwareModuleChecksums(unsigned char *buffer, unsigned int size);
 
 
 // ----- RF routines
+
+#define RF_TYPE_MAX2822 1
+#define RF_TYPE_RF2958  2
+#define RF_TYPE_MM3156  3
+#define RF_TYPE_TEST    4
 
 const char *GetRfType(int type);
 int IsValidRfType(int type);

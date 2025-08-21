@@ -44,6 +44,7 @@ uint32_t ParseArgNumber(const char *arg);
 
 void CmdProcHelp(int argc, const char **argv);
 void CmdProcInfo(int argc, const char **argv);
+void CmdProcWl(int argc, const char **argv);
 void CmdProcVerify(int argc, const char **argv);
 void CmdProcMap(int argc, const char **argv);
 void CmdProcLoad(int argc, const char **argv);
@@ -65,6 +66,7 @@ void CmdProcQuit(int argc, const char **argv);
 // ----- command help procs
 void CmdHelpHelp(void);
 void CmdHelpInfo(void);
+void CmdHelpWl(void);
 void CmdHelpVerify(void);
 void CmdHelpMap(void);
 void CmdHelpLoad(void);

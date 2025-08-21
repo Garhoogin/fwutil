@@ -41,6 +41,7 @@ static CmdProcEntry sProcTable[] = {
 	{ "save",    CmdProcSave    },
 	{ "info",    CmdProcInfo    },
 	{ "verify",  CmdProcVerify  },
+	{ "wl",      CmdProcWl      },
 	{ "map",     CmdProcMap     },
 	{ "compact", CmdProcCompact },
 	

@@ -14,6 +14,7 @@ static const HelpEntry sHelpEntries[] = {
 	{ "load",    CmdHelpLoad    },
 	{ "save",    CmdHelpSave    },
 	{ "info",    CmdHelpInfo    },
+	{ "wl",      CmdHelpWl      },
 	{ "verify",  CmdHelpVerify  },
 	{ "map",     CmdHelpMap     },
 	{ "compact", CmdHelpCompact },
@@ -80,4 +81,5 @@ void CmdProcHelp(int argc, const char **argv) {
 	puts("  fix          Fixes problems in the firmware image.");
 	puts("  import       Import a firmware component.");
 	puts("  restore      Restore firmware configuration from a file.");
+	puts("  wl           Modify the firmware wireless information.");
 }
